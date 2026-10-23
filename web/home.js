@@ -1,7 +1,7 @@
 /*
  * The home screen for web-app TVs (LG webOS, Samsung Tizen), with the Android app's design and behavior (HomeView):
- *  - top: the "For You" title and the tabs (Explore, Movies, Shows); icon-only glass buttons at the right (Live TV,
- *    HDMI Inputs, Settings) and the crypto quotes at the end of the tab row;
+ *  - top: the "For You" title and the tabs (Explore, Movies, Shows); icon-only glass buttons at the right (on LG, one
+ *    per paired Bluetooth headphone; Live TV, HDMI Inputs, Settings) and the crypto quotes at the end of the tab row;
  *  - three picks for this hour in the selected tab; the background is the first one's photo, blurred and almost white;
  *  - the glass shelf with the apps; ↓ opens the drawer (inputs, shortcuts, weather, prices); ↑ or Back closes it;
  *  - a night look from sunset to sunrise; a screensaver after a few idle minutes.
@@ -95,6 +95,20 @@
     return Math.max(18, Math.min(max, Math.floor(width * 0.8 / (Math.max(4, title.length) * 0.56))));
   }
 
+  /** The color along an icon's left edge, so the face around a square icon looks like the icon (null if unreadable). */
+  function edgeColor(img) {
+    try {
+      var c = document.createElement('canvas'), w = img.naturalWidth, h = img.naturalHeight;
+      c.width = 1; c.height = 1;
+      var g = c.getContext('2d');
+      g.drawImage(img, 0, h * 0.3, Math.max(1, w * 0.04), h * 0.4, 0, 0, 1, 1);
+      var d = g.getImageData(0, 0, 1, 1).data;
+      return d[3] > 240 ? 'rgb(' + d[0] + ',' + d[1] + ',' + d[2] + ')' : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   /** An app's face: its own icon on its brand color (or its name, when the icon can't be read). */
   function face(app, box, wordSize) {
     var k = shelfKey(app);
@@ -105,14 +119,18 @@
     var word = el('div', 'word', box, app.title);
     if (wordSize) word.style.fontSize = wordSize + 'px';
     if (app.icon) {
-      var img = el('img', '', box);
+      // The TV's own icons are whole tiles (LG's are square): full height, on their own edge color, so the face looks
+      // filled without cropping. Our bundled logos sit on the brand color.
+      var fill = app.icon.indexOf('icons/') !== 0;
+      var img = el('img', fill ? 'fill' : '', box);
       word.style.visibility = 'hidden';
       img.onerror = function () { img.parentNode.removeChild(img); word.style.visibility = ''; };
+      if (fill) img.onload = function () { var c = edgeColor(img); if (c) box.style.background = c; };
       img.src = app.icon;
     }
   }
 
-  var apps = [], shelf = [], others = [], inputs = [];
+  var apps = [], shelf = [], others = [], inputs = [], headphones = [];
 
   function pickShelf() {
     var chosen = Prefs.shelf(), out = [];
@@ -202,15 +220,41 @@
       var t = el('button', 'tab', tabs, names[i]);
       hover(t, Z.TOP, i);
     }
+    renderButtons();
+  }
+
+  /** The round buttons at the top right, right-aligned: the headphones (connected ones with a green dot), then Live TV,
+   * HDMI Inputs and Settings. They take st.top 3 and up. */
+  var topButtons = [], topHeadphones = 0;
+  function renderButtons() {
+    var list = [];
+    for (var h = 0; h < headphones.length; h++) {
+      var hp = headphones[h];
+      list.push({symbol: 'headphones', tip: hp.name, on: hp.connected, run: headphone(hp)});
+    }
+    list.push({symbol: 'live_tv', tip: tr('TV aberta', 'Live TV', 'TV en vivo'), run: function () {
+      var live = liveTV();
+      if (live) launcher(live.id, tr('TV aberta', 'Live TV', 'TV en vivo'))();
+    }});
+    list.push({symbol: 'hdmi', tip: tr('Entradas HDMI', 'HDMI Inputs', 'Entradas HDMI'), run: function () {
+      st.zone = Z.SHELF;
+      openDrawer();
+      st.drawer = 1 < drawerInputs ? 1 : 0;
+      updateFocus();
+    }});
+    list.push({symbol: 'settings', tip: tr('Ajustes', 'Settings', 'Ajustes'), run: openSettings});
+    // The focus stays on the same button when headphones come or go to its left.
+    if (st.zone === Z.TOP && st.top >= 3 + topHeadphones) st.top += headphones.length - topHeadphones;
+    topButtons = list;
+    topHeadphones = headphones.length;
+    st.top = Math.min(st.top, 2 + list.length);
     var buttons = $('buttons');
     buttons.innerHTML = '';
-    var defs = [['live_tv', tr('TV aberta', 'Live TV', 'TV en vivo')], ['hdmi', tr('Entradas HDMI', 'HDMI Inputs', 'Entradas HDMI')],
-      ['settings', tr('Ajustes', 'Settings', 'Ajustes')]];
-    for (var b = 0; b < 3; b++) {
-      var r = el('button', 'round' + (b === 2 ? ' last' : ''), buttons);
-      r.style.left = (1596 + 88 * b) + 'px';
-      sym(defs[b][0], r);
-      el('div', 'tip', r, defs[b][1]);
+    for (var b = 0; b < list.length; b++) {
+      var r = el('button', 'round' + (b === list.length - 1 ? ' last' : '') + (list[b].on ? ' on' : ''), buttons);
+      r.style.left = (1772 - 88 * (list.length - 1 - b)) + 'px';
+      sym(list[b].symbol, r);
+      el('div', 'tip', r, list[b].tip);
       hover(r, Z.TOP, 3 + b);
     }
   }
@@ -348,6 +392,7 @@
       hover(key, Z.DRAWER, k);
       xPos += tw + gap;
     }
+    st.drawer = Math.min(st.drawer, Math.max(0, n - 1));
     renderPanels();
     updateFocus();
   }
@@ -611,6 +656,34 @@
     };
   }
 
+  /** Connects paired headphones, or disconnects them when they already are (the TV's sound follows). */
+  var pairing = false;
+  function headphone(h) {
+    return function () {
+      if (pairing) return;
+      pairing = true;
+      var connect = !h.connected;
+      if (connect) toast(tr('Conectando ', 'Connecting ', 'Conectando ') + h.name + '…');
+      TV.headphone(h.address, connect, function (ok) {
+        pairing = false;
+        if (ok) toast(connect ? tr('Conectado: ', 'Connected: ', 'Conectado: ') + h.name : tr('Som de volta na TV', 'Sound back on the TV', 'Sonido de vuelta en el TV'));
+        else if (connect) toast(tr('Não deu para conectar ', "Couldn't connect ", 'No se pudo conectar ') + h.name + tr('. Ele está ligado e perto da TV?', '. Is it on and near the TV?', '. ¿Está encendido y cerca del TV?'));
+        else toast(tr('Não deu para desconectar ', "Couldn't disconnect ", 'No se pudo desconectar ') + h.name);
+        refreshHeadphones();
+      });
+    };
+  }
+
+  /** The headphones' state again (they may have connected elsewhere); the buttons are drawn again when it changed. */
+  function refreshHeadphones() {
+    TV.headphones(function (list) {
+      if (JSON.stringify(list) === JSON.stringify(headphones)) return;
+      headphones = list;
+      renderButtons();
+      updateFocus();
+    });
+  }
+
   function tvSettings() {
     TV.settings(function (ok) {
       if (!ok) toast(tr('Não deu para abrir os Ajustes da TV', "Couldn't open TV Settings", 'No se pudieron abrir los Ajustes del TV'));
@@ -625,10 +698,7 @@
   function activate() {
     switch (st.zone) {
       case Z.TOP:
-        if (st.top < 3) return;
-        if (st.top === 3) { var live = liveTV(); if (live) launcher(live.id, tr('TV aberta', 'Live TV', 'TV en vivo'))(); }
-        else if (st.top === 4) { st.zone = Z.SHELF; openDrawer(); st.drawer = 1 < drawerInputs ? 1 : 0; updateFocus(); }
-        else openSettings();
+        if (topButtons[st.top - 3]) topButtons[st.top - 3].run();
         return;
       case Z.CARDS:
         var p = cards[st.card], app = p && Data.appFor(p.app);
@@ -676,7 +746,7 @@
         break;
       case Z.TOP:
         if (dx) {
-          st.top = Math.max(0, Math.min(5, st.top + dx));
+          st.top = Math.max(0, Math.min(2 + topButtons.length, st.top + dx));
           if (st.top < 3) selectTab(st.top);   // as on Apple TV: focusing a tab selects it
         } else if (dy > 0) {
           if (cards.length) { st.zone = Z.CARDS; st.card = Math.min(cards.length - 1, st.top < 3 ? 0 : cards.length - 1); }
@@ -855,7 +925,10 @@
       pickShelf();
       TV.inputs(function (list2) {
         inputs = list2;
-        if (done) done();
+        TV.headphones(function (list3) {
+          headphones = list3;
+          if (done) done();
+        });
       });
     });
   }
@@ -881,7 +954,7 @@
     // LG: with handlesRelaunch the app has to come to the front itself, or opening it again while it runs shows nothing.
     if (window.PalmSystem && window.PalmSystem.activate) window.PalmSystem.activate();
     reset();
-    loadApps(function () { renderShelf(); renderDrawer(); Data.refresh(); });
+    loadApps(function () { renderShelf(); renderDrawer(); renderButtons(); updateFocus(); Data.refresh(); });
   }
 
   window.addEventListener('resize', fit);
@@ -890,7 +963,7 @@
   document.addEventListener('visibilitychange', function () {
     if (document.hidden) { hideSaver(); return; }
     idleAt = Date.now();
-    loadApps(function () { renderShelf(); renderDrawer(); updateFocus(); Data.refresh(); });
+    loadApps(function () { renderShelf(); renderDrawer(); renderButtons(); updateFocus(); Data.refresh(); });
   });
 
   I18N.set(Prefs.language());
@@ -904,6 +977,7 @@
     renderClock();
     checkNight();
     Data.refresh();
+    refreshHeadphones();
     if (!saverOn && !sheetOpen() && Date.now() - idleAt > SAVER_AFTER) showSaver();
     if (saverOn) tickSaverClock($('saver').querySelector('.clock'));
   }, 30000);

@@ -150,7 +150,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .night #quotes { color: rgba(245, 245, 247, 0.62); }
 .night #quotes svg { fill: rgba(245, 245, 247, 0.55); }
 
-/* Live TV, HDMI Inputs and Settings: glass circles; the focused one turns white, with its name below. */
+/* Headphones (LG), Live TV, HDMI Inputs, Settings: glass circles; the focused one turns white, its name below. */
 .round {
   position: absolute;
   top: 69px;
@@ -166,6 +166,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 }
 .round .sym { position: absolute; left: 20px; top: 20px; width: 28px; height: 28px; }
 .round.focus { background: #FFF; -webkit-transform: scale(1.1); transform: scale(1.1); box-shadow: 0 14px 30px rgba(0, 0, 0, 0.24); }
+.round.on::after { content: ''; position: absolute; top: 4px; right: 4px; width: 14px; height: 14px; border-radius: 7px; background: #30D158; }
 .round .tip {
   position: absolute;
   top: 88px;
@@ -310,6 +311,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   transition: transform 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.2), box-shadow 0.2s;
 }
 .tile img { position: absolute; left: 50%; top: 50%; max-width: 76%; max-height: 62%; -webkit-transform: translate(-50%, -50%); transform: translate(-50%, -50%); }
+.tile img.fill, .cell .face img.fill { top: 0; height: 100%; max-width: none; max-height: none; -webkit-transform: translateX(-50%); transform: translateX(-50%); }
 .tile .word {
   position: absolute;
   left: 8%;
