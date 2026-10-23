@@ -4,7 +4,8 @@
  *    per paired Bluetooth headphone; Live TV, HDMI Inputs, Settings) and the crypto quotes at the end of the tab row;
  *  - three picks for this hour in the selected tab; the background is the first one's photo, blurred and almost white;
  *  - the glass shelf with the apps; ↓ opens the drawer (inputs, shortcuts, weather, prices); ↑ or Back closes it;
- *  - a night look from sunset to sunrise; a screensaver after a few idle minutes.
+ *  - a night look from sunset to sunrise; a screensaver after a few idle minutes (photos, the clock, the weather and
+ *    the prices).
  * The remote's arrows, OK and Back move the focus; a pointer (LG's Magic Remote) focuses what it points at.
  */
 (function () {
@@ -404,15 +405,13 @@
     var wx = Prefs.weather(), coins = Data.activeCoins(), qt = coins.length > 0;
     var split = 80 + 1760 * 0.585;
     if (wx) {
-      var w = el('div', 'panel glass', d);
-      w.id = 'weather';
+      var w = el('div', 'panel glass weather', d);
       w.style.left = '80px';
       w.style.width = ((qt ? split - 16 : 1840) - 80) + 'px';
-      renderWeather(w);
+      renderWeather(w, 6);
     }
     if (qt) {
-      var q = el('div', 'panel glass', d);
-      q.id = 'prices';
+      var q = el('div', 'panel glass prices', d);
       var left = wx ? split + 16 : 80;
       q.style.left = left + 'px';
       q.style.width = (1840 - left) + 'px';
@@ -420,7 +419,9 @@
     }
   }
 
-  function renderWeather(card) {
+  /** The weather card; `hours` hourly forecasts (6 in the drawer, 2 on the screensaver), and the sunrise and sunset
+   * only with 6. */
+  function renderWeather(card, hours) {
     el('div', 'head', card, Data.city || tr('Clima', 'Weather', 'Clima'));
     var w = Data.weather;
     if (!w) {
@@ -434,15 +435,16 @@
     el('div', 'range', card, I18N.lang === 'ru' ? 'Макс. ' + Data.degrees(w.max) + '   Мин. ' + Data.degrees(w.min) : tr('Máx. ' + Data.degrees(w.max) + '   Mín. ' + Data.degrees(w.min), 'H:' + Data.degrees(w.max) + '   L:' + Data.degrees(w.min),
         'Máx. ' + Data.degrees(w.max) + '   Mín. ' + Data.degrees(w.min)));
     el('div', 'split', card);
-    var hours = el('div', 'hours', card), width = parseFloat(card.style.width) - 30 - 422, hw = width / 6;
-    for (var i = 0; i < w.hours.length && i < 6; i++) {
-      var h = el('div', 'hour', hours), x = w.hours[i];
+    var row = el('div', 'hours', card), width = parseFloat(card.style.width) - 30 - 422, hw = width / hours;
+    for (var i = 0; i < w.hours.length && i < hours; i++) {
+      var h = el('div', 'hour', row), x = w.hours[i];
       h.style.left = (hw * i) + 'px';
       h.style.width = hw + 'px';
       el('div', 't', h, Data.hour(x.at));
       sym(Data.symbol(x.code, x.day), h);
       el('div', 'd', h, Data.degrees(x.temp));
     }
+    if (hours < 6) return;
     var sun = el('div', 'sun', card);
     if (w.sunrise) { var a = el('span', '', sun); sym('sunrise', a); a.appendChild(document.createTextNode(tr('Nascer ', 'Sunrise ', 'Amanecer ') + Data.time(w.sunrise))); }
     if (w.sunset) { var b = el('span', '', sun); sym('sunset', b); b.appendChild(document.createTextNode(tr('Pôr do sol ', 'Sunset ', 'Atardecer ') + Data.time(w.sunset))); }
@@ -834,6 +836,7 @@
     el('div', 'time', clock);
     el('div', 'date', clock);
     el('div', 'title', clock);
+    renderSaverCards();
     var front = a;
     function next() {
       if (!saverOn) return;
@@ -855,6 +858,27 @@
     }
     setClass(s, 'on', true);
     next();
+  }
+
+  /** The weather and prices cards, on the clock's row at the bottom, right-aligned (each one only when it's on, as
+   * in the drawer). */
+  function renderSaverCards() {
+    var s = $('saver'), old = s.querySelectorAll('.panel');
+    for (var o = 0; o < old.length; o++) s.removeChild(old[o]);
+    var coins = Data.activeCoins(), right = 1840;
+    if (coins.length) {
+      renderPrices(saverCard('prices', right - 540, 540), coins);
+      right -= 540 + 24;
+    }
+    if (Prefs.weather()) renderWeather(saverCard('weather', right - 612, 612), 2);
+  }
+
+  function saverCard(kind, left, width) {
+    var card = el('div', 'panel ' + kind, $('saver'));
+    card.style.left = left + 'px';
+    card.style.width = width + 'px';
+    card.style.top = (1080 - 90 - 300) + 'px';
+    return card;
   }
 
   function tickSaverClock(clock) {
@@ -947,6 +971,7 @@
     renderQuotes();
     renderCards();
     renderPanels();
+    if (saverOn) renderSaverCards();
     checkNight();
   });
 
